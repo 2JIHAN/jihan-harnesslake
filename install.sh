@@ -162,10 +162,14 @@ fi
 # 4. Install Skills
 if [ "$INSTALL_SKILLS" = true ]; then
   echo "🧰 Installing Agent skills..."
+  SKILL_SOURCE="${AGENCI_SKILLS_DIR:-$HOME/.agenci/harness/skills}"
+  if [ ! -d "$SKILL_SOURCE" ]; then
+    SKILL_SOURCE="$SCRIPT_DIR/skills"
+  fi
   SKILLS_TARGET="$TARGET_DIR/.agents/skills"
   mkdir -p "$SKILLS_TARGET"
 
-  for skill_dir in "$SCRIPT_DIR/skills/"*; do
+  for skill_dir in "$SKILL_SOURCE/"*; do
     if [ -d "$skill_dir" ]; then
       skill_name="$(basename "$skill_dir")"
       dest_dir="$SKILLS_TARGET/$skill_name"
