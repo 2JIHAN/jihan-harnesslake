@@ -182,21 +182,25 @@ export function browserReachable(account, session) {
 
 export const bridgeOk = browserReachable;
 
-// Launch profile window in background without stealing focus if unreachable
+// Launch the bound profile with a real tab when the extension bridge is unreachable.
+// `open -a ... --args --profile-directory=...` is ignored when Aside is already
+// running, and a profile window with no tab still produces an empty bridge. A new
+// app instance plus a bootstrap URL reliably creates/activates the requested
+// profile and gives the extension a tab to attach to.
 export function ensureBridge(account, waitSec = 45) {
   ensureAppRunning({ background: true });
-  if (bridgeOk(account)) return true;
+  if (bridgeOk(account)) return { bootstrapOpened: false };
 
   const profile = profileFor(account);
-  console.error(`Browser unreachable. Launching profile "${profile}" window in background.`);
+  console.error(`Browser unreachable. Launching and activating profile "${profile}" with a bootstrap tab.`);
   const appPath = appBundlePath();
-  execFileSync('open', ['-g', '-a', appPath, '--args', `--profile-directory=${profile}`]);
+  execFileSync('open', ['-n', '-a', appPath, '--args', `--profile-directory=${profile}`, 'https://example.com']);
 
   for (let waited = 0; waited < waitSec; waited += 3) {
     execFileSync('sleep', ['3']);
     if (bridgeOk(account)) {
       console.error(`  Bridge connection established in ${waited + 3}s.`);
-      return true;
+      return { bootstrapOpened: true };
     }
   }
   console.error(`Failed: Profile "${profile}" window did not become ready within ${waitSec}s.`);
@@ -250,8 +254,10 @@ export function resolveSession(account, name) {
 export const TURN_TIMEOUT_MS = Number(process.env.ASIDE_TURN_TIMEOUT_MS || 120_000);
 
 export function ask(account, prompt, session, { timeout = TURN_TIMEOUT_MS } = {}) {
-  const base = ['exec', '--account', resolveAccount(account)];
-  if (session) base.push('--session', session);
+  const resolvedAccount = resolveAccount(account);
+  const base = session
+    ? ['session', 'resume', '--account', resolvedAccount, session]
+    : ['exec', '--account', resolvedAccount];
   const run = () => execFileSync('aside', [...base, prompt], { encoding: 'utf8', timeout });
 
   const isTimeout = (e) => e.code === 'ETIMEDOUT' || e.signal === 'SIGTERM';
