@@ -171,10 +171,12 @@ export function profileFor(account) {
 }
 
 // Check if browser bridge is reachable
-export function browserReachable(account, session) {
+export function browserReachable(account, _session, { timeout = 10_000 } = {}) {
   try {
-    const out = ask(account, 'Reply with only the URL of the active tab in one line. Do not click anything.', session);
-    return /https?:\/\/|chrome:\/\/|chrome-extension:\/\//.test(out);
+    const out = execFileSync('aside', ['repl', '--account', resolveAccount(account),
+      'await listBrowserTabs(); console.log("AGENCI_BROWSER_READY");'],
+      { encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'] });
+    return out.split('\n').some((line) => line.trim() === 'AGENCI_BROWSER_READY');
   } catch {
     return false;
   }
@@ -188,6 +190,7 @@ export const bridgeOk = browserReachable;
 // app instance plus a bootstrap URL reliably creates/activates the requested
 // profile and gives the extension a tab to attach to.
 export function ensureBridge(account, waitSec = 45) {
+  const deadline = Date.now() + waitSec * 1000;
   ensureAppRunning({ background: true });
   if (bridgeOk(account)) return { bootstrapOpened: false };
 
@@ -196,10 +199,11 @@ export function ensureBridge(account, waitSec = 45) {
   const appPath = appBundlePath();
   execFileSync('open', ['-n', '-a', appPath, '--args', `--profile-directory=${profile}`, 'https://example.com']);
 
-  for (let waited = 0; waited < waitSec; waited += 3) {
-    execFileSync('sleep', ['3']);
-    if (bridgeOk(account)) {
-      console.error(`  Bridge connection established in ${waited + 3}s.`);
+  while (Date.now() < deadline) {
+    execFileSync('sleep', [String(Math.min(3, (deadline - Date.now()) / 1000))]);
+    const remaining = deadline - Date.now();
+    if (remaining > 0 && bridgeOk(account, undefined, { timeout: Math.min(10_000, remaining) })) {
+      console.error('  Bridge connection established.');
       return { bootstrapOpened: true };
     }
   }
